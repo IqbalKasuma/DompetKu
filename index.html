@@ -407,6 +407,23 @@ body.dark .co-check{color:#60a5fa;}
 <div id="loading-overlay">💰</div>
 <div id="app">
 
+<!-- ══ LOCK ══ -->
+<div class="screen" id="lock-screen">
+  <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;">
+    <div class="setup-card">
+      <div class="setup-emoji">🔒</div>
+      <h1 class="setup-title">DompetKu Terkunci</h1>
+      <p class="setup-sub">Masukkan PIN buat lanjut</p>
+      <div class="setup-wrap" style="justify-content:center;">
+        <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="lock-pin-inp" class="setup-inp" style="text-align:center;letter-spacing:14px;padding-left:16px;" placeholder="••••" autocomplete="off" oninput="handleLockPinInput(this)" onkeydown="if(event.key==='Enter')submitLockPin()"/>
+      </div>
+      <p class="form-hint warn" id="lock-pin-err" style="text-align:center;min-height:18px;"></p>
+      <button class="btn-p" onclick="submitLockPin()">Buka 🔓</button>
+      <button style="width:100%;margin-top:10px;background:none;border:none;color:rgba(255,255,255,.65);font-size:13px;text-decoration:underline;cursor:pointer;padding:8px;" onclick="confirmForgotPin()">Lupa PIN?</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ SETUP ══ -->
 <div class="screen" id="setup-screen">
   <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;">
@@ -583,6 +600,14 @@ body.dark .co-check{color:#60a5fa;}
   </div>
   <div class="settings-area">
     <div class="settings-card">
+      <div class="settings-item" onclick="openPinSettings()">
+        <div class="si-icon" style="background:#fee2e2">🔒</div>
+        <div class="si-info">
+          <div class="si-name">PIN / Kunci Aplikasi</div>
+          <div class="si-desc" id="pin-settings-desc">Nonaktif</div>
+        </div>
+        <div class="si-arrow">›</div>
+      </div>
       <div class="settings-item" onclick="toggleDark()">
         <div class="si-icon" style="background:#1a1a2e">🌙</div>
         <div class="si-info">
@@ -663,7 +688,7 @@ body.dark .co-check{color:#60a5fa;}
         <div class="si-arrow">›</div>
       </div>
     </div>
-    <p style="text-align:center;font-size:12px;color:var(--text-muted);margin-top:8px;">DompetKu v5.0 • Data offline di perangkat kamu</p>
+    <p style="text-align:center;font-size:12px;color:var(--text-muted);margin-top:8px;">DompetKu v3.0 • Data offline di perangkat kamu</p>
     <p style="text-align:center;font-size:12px;color:var(--text-muted);margin-top:8px;">Created By Iqbal Kasuma</p>
   </div>
   <nav class="bottom-nav">
@@ -799,6 +824,15 @@ body.dark .co-check{color:#60a5fa;}
       <button class="btn-cancel" onclick="closeModal('modal-del-cat')">Batal</button>
       <button class="btn-ok btn-danger" onclick="confirmDeleteCat()">Hapus Kategori</button>
     </div>
+  </div>
+</div>
+
+<!-- PIN Settings -->
+<div class="modal-overlay" id="modal-pin-settings" onclick="closeOnOverlay(event,'modal-pin-settings')">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-hdr"><div class="modal-title">🔒 PIN / Kunci Aplikasi</div></div>
+    <div class="modal-body" id="pin-settings-body"></div>
   </div>
 </div>
 
@@ -1432,7 +1466,18 @@ async function init() {
   updateNotifSettingsDesc();
   // Load currency format
   loadCurrencyFormat();
+  // Load PIN lock state
+  updatePinSettingsDesc();
 
+  if (isPinEnabled()) {
+    hide('loading-overlay');
+    showScreen('lock-screen');
+    focusLockInput();
+    return; // continueInit() runs after correct PIN via submitLockPin()
+  }
+  await continueInit();
+}
+async function continueInit() {
   await db.open();
   S.months = await db.months.orderBy('id').toArray();
 
@@ -1457,6 +1502,138 @@ async function init() {
   updateTodayDisplay();
 }
 function hide(id){ document.getElementById(id).style.display='none'; }
+
+/* ── PIN / APP LOCK ── */
+async function sha256Hex(str) {
+  const enc = new TextEncoder().encode(str);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+function isPinEnabled(){ return localStorage.getItem('dompetku-pin-enabled')==='1'; }
+function updatePinSettingsDesc(){
+  const el=document.getElementById('pin-settings-desc');
+  if(el) el.textContent = isPinEnabled() ? 'Aktif' : 'Nonaktif';
+}
+function focusLockInput(){
+  const inp=document.getElementById('lock-pin-inp');
+  if(!inp) return;
+  inp.value=''; document.getElementById('lock-pin-err').textContent='';
+  setTimeout(()=>inp.focus(),150);
+}
+function handleLockPinInput(el){
+  el.value = el.value.replace(/\D/g,'').slice(0,4);
+  if(el.value.length===4){ submitLockPin(); }
+}
+async function submitLockPin(){
+  const inp=document.getElementById('lock-pin-inp');
+  const v=inp.value;
+  const err=document.getElementById('lock-pin-err');
+  if(!/^\d{4}$/.test(v)){err.textContent='⚠️ Masukkan 4 digit PIN';return;}
+  const hash=await sha256Hex(v);
+  if(hash!==localStorage.getItem('dompetku-pin-hash')){
+    err.textContent='⚠️ PIN salah, coba lagi';
+    inp.value=''; inp.focus();
+    return;
+  }
+  err.textContent='';
+  await continueInit();
+}
+function confirmForgotPin(){
+  openModal('modal-reset');
+}
+function openPinSettings(){
+  renderPinSettingsHome();
+  openModal('modal-pin-settings');
+}
+function renderPinSettingsHome(){
+  const body=document.getElementById('pin-settings-body');
+  if(isPinEnabled()){
+    body.innerHTML=`
+      <p style="text-align:center;font-size:14px;color:var(--text-secondary);margin-bottom:20px;">🔒 PIN aktif. DompetKu akan minta PIN tiap kali dibuka.</p>
+      <button class="btn-ok" style="width:100%;margin-bottom:10px;" onclick="renderChangePinForm()">Ubah PIN</button>
+      <button class="btn-ok btn-danger" style="width:100%;" onclick="renderDisablePinForm()">Nonaktifkan PIN</button>
+    `;
+  } else {
+    body.innerHTML=`
+      <p style="text-align:center;font-size:14px;color:var(--text-secondary);margin-bottom:16px;">Amankan data DompetKu kamu dengan PIN 4 digit.</p>
+      <div class="form-grp">
+        <label class="form-lbl">PIN Baru</label>
+        <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" class="form-inp" id="pin-set-1" placeholder="••••" style="letter-spacing:10px;text-align:center;"/>
+      </div>
+      <div class="form-grp">
+        <label class="form-lbl">Ulangi PIN</label>
+        <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" class="form-inp" id="pin-set-2" placeholder="••••" style="letter-spacing:10px;text-align:center;"/>
+      </div>
+      <p class="form-hint warn" id="pin-set-err" style="min-height:18px;"></p>
+      <button class="btn-ok" style="width:100%;" onclick="activatePin()">Aktifkan PIN</button>
+    `;
+  }
+}
+async function activatePin(){
+  const p1=document.getElementById('pin-set-1').value;
+  const p2=document.getElementById('pin-set-2').value;
+  const err=document.getElementById('pin-set-err');
+  if(!/^\d{4}$/.test(p1)){err.textContent='⚠️ PIN harus 4 digit angka';return;}
+  if(p1!==p2){err.textContent='⚠️ PIN tidak sama, coba lagi';return;}
+  localStorage.setItem('dompetku-pin-hash', await sha256Hex(p1));
+  localStorage.setItem('dompetku-pin-enabled','1');
+  updatePinSettingsDesc();
+  closeModal('modal-pin-settings');
+  showToast('✅ PIN diaktifkan!');
+}
+function renderChangePinForm(){
+  const body=document.getElementById('pin-settings-body');
+  body.innerHTML=`
+    <div class="form-grp">
+      <label class="form-lbl">PIN Lama</label>
+      <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" class="form-inp" id="pin-change-old" placeholder="••••" style="letter-spacing:10px;text-align:center;"/>
+    </div>
+    <div class="form-grp">
+      <label class="form-lbl">PIN Baru</label>
+      <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" class="form-inp" id="pin-change-new1" placeholder="••••" style="letter-spacing:10px;text-align:center;"/>
+    </div>
+    <div class="form-grp">
+      <label class="form-lbl">Ulangi PIN Baru</label>
+      <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" class="form-inp" id="pin-change-new2" placeholder="••••" style="letter-spacing:10px;text-align:center;"/>
+    </div>
+    <p class="form-hint warn" id="pin-change-err" style="min-height:18px;"></p>
+    <button class="btn-ok" style="width:100%;" onclick="saveChangePin()">Simpan PIN Baru</button>
+  `;
+}
+async function saveChangePin(){
+  const oldV=document.getElementById('pin-change-old').value;
+  const n1=document.getElementById('pin-change-new1').value;
+  const n2=document.getElementById('pin-change-new2').value;
+  const err=document.getElementById('pin-change-err');
+  if((await sha256Hex(oldV))!==localStorage.getItem('dompetku-pin-hash')){err.textContent='⚠️ PIN lama salah';return;}
+  if(!/^\d{4}$/.test(n1)){err.textContent='⚠️ PIN baru harus 4 digit angka';return;}
+  if(n1!==n2){err.textContent='⚠️ PIN baru tidak sama, coba lagi';return;}
+  localStorage.setItem('dompetku-pin-hash', await sha256Hex(n1));
+  closeModal('modal-pin-settings');
+  showToast('✅ PIN diperbarui!');
+}
+function renderDisablePinForm(){
+  const body=document.getElementById('pin-settings-body');
+  body.innerHTML=`
+    <p style="text-align:center;font-size:14px;color:var(--text-secondary);margin-bottom:16px;">Masukkan PIN kamu buat nonaktifkan kunci aplikasi.</p>
+    <div class="form-grp">
+      <label class="form-lbl">PIN Saat Ini</label>
+      <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" class="form-inp" id="pin-disable-inp" placeholder="••••" style="letter-spacing:10px;text-align:center;"/>
+    </div>
+    <p class="form-hint warn" id="pin-disable-err" style="min-height:18px;"></p>
+    <button class="btn-ok btn-danger" style="width:100%;" onclick="confirmDisablePin()">Nonaktifkan PIN</button>
+  `;
+}
+async function confirmDisablePin(){
+  const v=document.getElementById('pin-disable-inp').value;
+  const err=document.getElementById('pin-disable-err');
+  if((await sha256Hex(v))!==localStorage.getItem('dompetku-pin-hash')){err.textContent='⚠️ PIN salah';return;}
+  localStorage.removeItem('dompetku-pin-hash');
+  localStorage.setItem('dompetku-pin-enabled','0');
+  updatePinSettingsDesc();
+  closeModal('modal-pin-settings');
+  showToast('🔓 PIN dinonaktifkan');
+}
 
 function updateTodayDisplay() {
   const today = new Date();
@@ -2004,6 +2181,9 @@ async function saveEditTx() {
 function confirmReset(){ document.getElementById('modal-reset').classList.add('open'); }
 async function resetAll() {
   await db.months.clear(); await db.categories.clear(); await db.transactions.clear();
+  localStorage.removeItem('dompetku-pin-hash');
+  localStorage.setItem('dompetku-pin-enabled','0');
+  updatePinSettingsDesc();
   S={currentMonthId:null,viewMonthId:null,months:[],cats:[],saldoBebas:0,saldoAwal:0,selEmoji:'📦',reallocCatId:null,delCatId:null,editTxId:null,isDark:S.isDark,pdfSelMonths:new Set()};
   closeModal('modal-reset');
   document.getElementById('inp-saldo-awal').value='';
